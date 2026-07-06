@@ -3,14 +3,20 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.figure_factory as ff
-import io, pickle, json, shap
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.figure_factory as ff
+import io, pickle, json
+# import shap  # DISABLED FOR CLOUD DEPLOY
 from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier, IsolationForest
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression, LinearRegression
-from sklearn.metrics import r2_score, accuracy_score, confusion_matrix, roc_curve, auc
+from sklearn.metrics import r2_score, accuracy_score, confusion_matrix
 from sklearn.preprocessing import LabelEncoder
 import plotly.graph_objects as go
-from fpdf import FPDF
+# from fpdf import FPDF  # DISABLED FOR CLOUD DEPLOY
 
 st.set_page_config(page_title="AI Data Scientist Copilot Pro", layout="wide")
 
