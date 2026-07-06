@@ -1,0 +1,13 @@
+streamlit
+pandas
+plotly
+scikit-learn
+xgboost
+lightgbm
+shap
+openai
+langchain
+pandasai
+python-dotenv
+fpdf2
+scipy
