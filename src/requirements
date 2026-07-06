@@ -1,8 +1,7 @@
-streamlit
+streamlit=1.37.0
 pandas
 numpy
 plotly
 scikit-learn
-shap
-fpdf
-xlsxwriter
+openpyxl
+fpdf2
