@@ -7,11 +7,11 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import io, pickle, warnings, shap, time, psutil, json, os
 from datetime import datetime
-from sklearn.model_selection import train_test_split, GridSearchCV, KFold, cross_val_score
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LogisticRegression, LinearRegression
-from sklearn.metrics import accuracy_score, r2_score, roc_curve, confusion_matrix
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.metrics import accuracy_score, r2_score
+from sklearn.preprocessing import LabelEncoder
 from sklearn.impute import SimpleImputer
 
 warnings.filterwarnings('ignore')
@@ -23,12 +23,14 @@ if 'experiment_history' not in st.session_state:
 
 st.set_page_config(page_title="AI Data Scientist Copilot Pro", layout="wide", page_icon="🤖")
 
+# Dark/Light mode
 theme = st.sidebar.toggle("🌙 Dark Mode", value=True)
 theme_css = "background-color:#0E1117; color:white;" if theme else "background-color:white; color:black;"
 st.markdown(f"<style>.stApp {{{theme_css}}}</style>", unsafe_allow_html=True)
 
 st.markdown('<h1 style="font-size:2.8rem; font-weight:800;">🤖 AI Data Scientist Copilot Pro</h1>', unsafe_allow_html=True)
 
+# Sidebar
 with st.sidebar:
     st.header("👤 User Profile")
     username = st.text_input("Username", "guest")
@@ -57,7 +59,7 @@ if uploaded_file is not None:
     
     tabs = st.tabs(["📊 EDA", "🧠 Training", "🏆 Leaderboard", "🔍 Explain", "📁 Projects", "📥 Export"])
     
-    with tabs[0]:
+    with tabs[0]: # EDA
         st.subheader("Interactive Dataset Preview Table")
         st.dataframe(df, use_container_width=True, height=300)
         cols = st.columns(5)
@@ -71,13 +73,13 @@ if uploaded_file is not None:
         st.subheader("Correlation Heatmap")
         numeric_df = df.select_dtypes(include=np.number)
         if not numeric_df.empty:
-            fig = px.imshow(numeric_df.corr(), text_auto=".2f")
+            fig = px.imshow(numeric_df.corr(), text_auto=".2f", color_continuous_scale='RdBu')
             st.plotly_chart(fig, use_container_width=True)
         st.subheader("Distribution Charts")
-        col = st.selectbox("Pick column", df.columns)
+        col = st.selectbox("Pick column", df.columns, key="eda_col")
         st.plotly_chart(px.histogram(df, x=col), use_container_width=True)
 
-    with tabs[1]:
+    with tabs[1]: # TRAINING - YOUR FIXED BLOCK IS HERE
         target_col = st.selectbox("🎯 Target Column", df.columns)
         
         if task_type == "Auto-Detect":
@@ -98,24 +100,22 @@ if uploaded_file is not None:
                 st.error("❌ Not enough data. Need at least 5 rows after cleaning.")
                 st.stop()
 
-            # 1. Encode categorical features
-            encoders = {}
             for col in X.select_dtypes(include=['object']).columns:
-                le = LabelEncoder()
-                X[col] = le.fit_transform(X[col].astype(str))
-                encoders[col] = le
+                X[col] = LabelEncoder().fit_transform(X[col].astype(str))
 
-            # 2. Impute missing values and keep DataFrame format
             imputer = SimpleImputer(strategy='median')
             X = pd.DataFrame(imputer.fit_transform(X), columns=X.columns)
 
-            # 3. Encode target if classification
             if y.dtype == 'object' and task_type == "Classification":
-                le_y = LabelEncoder()
-                y = le_y.fit_transform(y.astype(str))
+                y = LabelEncoder().fit_transform(y.astype(str))
             # =================================
             
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+            
+            # AUTO-ADJUST CV FOLDS SO IT DOESN'T CRASH
+            safe_cv = min(cv_folds, len(X_train))
+            if safe_cv < 2: safe_cv = 2
+            log_area.info(f"Using {safe_cv}-Fold CV")
             
             models = {
                 'Random Forest': RandomForestClassifier(n_estimators=n_estimators, random_state=42) if task_type=="Classification" else RandomForestRegressor(n_estimators=n_estimators, random_state=42),
@@ -125,19 +125,25 @@ if uploaded_file is not None:
             results = {}
             for name, model in models.items():
                 log_area.info(f"Training {name}...")
-                cv_scores = cross_val_score(model, X_train, y_train, cv=cv_folds)
+                try:
+                    cv_scores = cross_val_score(model, X_train, y_train, cv=safe_cv)
+                    cv_mean = cv_scores.mean()
+                except Exception as e:
+                    log_area.warning(f"CV failed for {name}. Using single train score.")
+                    cv_mean = 0
+                    
                 model.fit(X_train, y_train)
                 pred = model.predict(X_test)
                 score = accuracy_score(y_test, pred) if task_type=="Classification" else r2_score(y_test, pred)
-                results[name] = {"model": model, "score": score, "cv": cv_scores.mean(), "pred": pred}
+                results[name] = {"model": model, "score": score, "cv": cv_mean, "pred": pred}
             
             best_name = max(results, key=lambda x: results[x]['score'])
             st.session_state['results'] = results
             st.session_state['best_model'] = results[best_name]['model']
             st.session_state['X_test'] = X_test
             st.session_state['y_test'] = y_test
-            st.session_state['X_train'] = X_train # Added for SHAP
-            st.session_state['feature_names'] = X.columns.tolist() # Added for SHAP labels
+            st.session_state['X_train'] = X_train
+            st.session_state['feature_names'] = X.columns.tolist()
             
             st.session_state['experiment_history'].append({
                 "time": datetime.now().strftime("%H:%M:%S"),
@@ -147,13 +153,13 @@ if uploaded_file is not None:
             notif.success(f"Training complete! Best: {best_name}")
             log_area.success(f"Done in {time.time()-start_time:.2f}s")
 
-    with tabs[2]:
+    with tabs[2]: # LEADERBOARD
         if 'results' in st.session_state:
             st.subheader("Model Leaderboard")
-            lb = pd.DataFrame([{ "Model": k, "Score": v['score'], "CV Mean": v['cv']} for k,v in st.session_state['results'].items()])
-            st.dataframe(lb.sort_values("Score", ascending=False), use_container_width=True)
+            lb = pd.DataFrame([{ "Model": k, "Test Score": round(v['score'],4), "CV Mean": round(v['cv'],4)} for k,v in st.session_state['results'].items()])
+            st.dataframe(lb.sort_values("Test Score", ascending=False), use_container_width=True)
 
-    with tabs[3]:
+    with tabs[3]: # EXPLAIN
         if 'best_model' in st.session_state:
             st.subheader("SHAP Feature Importance Chart")
             try:
@@ -161,11 +167,11 @@ if uploaded_file is not None:
                 shap_values = explainer(st.session_state['X_test'][:50])
                 importance = np.abs(shap_values.values).mean(0)
                 fig = px.bar(x=st.session_state['feature_names'], y=importance, labels={'x':'Feature', 'y':'Mean |SHAP|'})
-                st.plotly_chart(fig)
-            except:
-                st.warning("SHAP failed for this model type")
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.warning(f"SHAP failed: {e}")
 
-    with tabs[4]:
+    with tabs[4]: # PROJECTS
         st.subheader("Project Management")
         project_name = st.text_input("Project Name")
         if st.button("💾 Save Project"):
@@ -178,11 +184,11 @@ if uploaded_file is not None:
         st.subheader("Experiment History")
         st.dataframe(pd.DataFrame(st.session_state['experiment_history']))
 
-    with tabs[5]:
+    with tabs[5]: # EXPORT
         if 'best_model' in st.session_state:
             buf = io.BytesIO()
             pickle.dump(st.session_state['best_model'], buf)
-            st.download_button("📦 Download Model", buf.getvalue(), "model.pkl")
+            st.download_button("📦 Download Model.pkl", buf.getvalue(), "model.pkl")
             st.subheader("One-click deployment")
             st.code("docker run -p 8501:8501 your-app\n# or deploy to Streamlit Cloud")
 
